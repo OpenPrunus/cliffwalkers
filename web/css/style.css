@@ -130,7 +130,8 @@ h2 { margin: 0; }
 .overlay p { margin: 0; max-width: 28em; }
 .overlay .stack { flex-direction: row; flex-wrap: wrap; justify-content: center; width: auto; }
 
-#skills { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 6px; width: 100%; max-width: 960px; }
+#hint { margin: 0; max-width: 960px; font-size: .9rem; color: var(--muted); text-align: center; line-height: 1.35; }
+#skills { display: grid; grid-template-columns: repeat(var(--n, 8), minmax(0, 120px)); justify-content: center; gap: 8px; width: 100%; max-width: 960px; }
 .skill {
   position: relative;
   font: inherit;
@@ -146,7 +147,7 @@ h2 { margin: 0; }
   cursor: pointer;
   min-width: 0;
 }
-.skill .ico { font-size: 1.4rem; line-height: 1; }
+.skill .ico { font-size: 1.6rem; line-height: 1; }
 .skill .nm { font-size: .62rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
 .skill .cnt { position: absolute; top: 2px; right: 4px; font-size: .75rem; font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; }
 .skill.sel { border-color: var(--accent); background: #3d5a7d; }
@@ -160,8 +161,8 @@ h2 { margin: 0; }
 
 @media (max-width: 520px) {
   h1 { font-size: 2rem; }
-  .skill .nm { display: none; }
-  .skill .ico { font-size: 1.25rem; }
+  .skill .ico { font-size: 1.4rem; }
+  #hint { font-size: .8rem; }
 }
 @media (max-height: 520px) and (orientation: landscape) {
   #game { flex-direction: row; flex-wrap: wrap; align-content: flex-start; }
@@ -169,4 +170,5 @@ h2 { margin: 0; }
   .ctl { height: 34px; }
   #bar { font-size: .8rem; }
   .skill .nm { display: none; }
+  #hint { display: none; }
 }

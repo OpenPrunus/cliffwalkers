@@ -12,8 +12,9 @@ const ICONS = { climber: '🧗', floater: '☂️', bomber: '💣', blocker: '�
 const SCREENS = ['title', 'levels', 'help', 'game'];
 
 // ---------------------------------------------------------------- progression (gardée dans le navigateur)
-const progress = { best: {} };
+const progress = { v: 2, best: {} };
 try { Object.assign(progress, JSON.parse(localStorage.getItem('cliffwalkers.progress') ?? '{}')); } catch { /* stockage indisponible */ }
+if (progress.v !== 2) { progress.v = 2; progress.best = {}; }                // les niveaux ont été renumérotés : on repart de zéro
 const saveProgress = () => { try { localStorage.setItem('cliffwalkers.progress', JSON.stringify(progress)); } catch { /* ignoré */ } };
 const cleared = (i) => progress.best[LEVELS[i].id] !== undefined && progress.best[LEVELS[i].id] >= LEVELS[i].need;
 const unlocked = (i) => i === 0 || cleared(i - 1);
@@ -32,7 +33,7 @@ function refreshLabels() {
   $('#opt-lang').textContent = t('langToggle');
   $('#btn-continue').textContent = Object.keys(progress.best).length > 0 ? t('continue') : t('play');
   buildLevelGrid();
-  if (app.game) { buildSkills(); updateBar(); }
+  if (app.game) { buildSkills(); updateBar(); $('#hint').textContent = i18n.pick(app.game.level.hint); $('#brief-hint').textContent = i18n.pick(app.game.level.hint); }
 }
 
 // ---------------------------------------------------------------- niveaux
@@ -68,6 +69,7 @@ function startLevel(i) {
   $('#lvl-name').textContent = `${t('level', { n: lv.id })} · ${i18n.pick(lv.name)}`;
   $('#brief-title').textContent = i18n.pick(lv.name);
   $('#brief-hint').textContent = i18n.pick(lv.hint);
+  $('#hint').textContent = i18n.pick(lv.hint);
   $('#brief-goal').textContent = t('briefing', { need: lv.need, count: lv.count });
   $('#briefing').hidden = false;
   $('#result').hidden = true;
@@ -107,7 +109,10 @@ function updateBar() {
 function buildSkills() {
   const bar = $('#skills');
   bar.replaceChildren();
-  for (const s of SKILLS) {
+  // seules les compétences du niveau sont proposées (les autres ne serviraient à rien)
+  const offered = SKILLS.filter((s) => (app.game.level.skills[s] ?? 0) > 0);
+  bar.style.setProperty('--n', String(offered.length));
+  for (const s of offered) {
     const b = document.createElement('button');
     b.className = 'skill';
     b.dataset.skill = s;

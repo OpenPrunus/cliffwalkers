@@ -33,15 +33,16 @@ test('la solution n\'utilise que les compétences du niveau, et pas plus que le 
   }
 });
 
-test('sans rien faire, seuls les niveaux 1 se gagnent : les autres demandent bien leur compétence', () => {
+test('sans rien faire, aucun niveau ne se gagne : chacun demande bien ses compétences, et chacun en offre au moins une', () => {
   for (const lv of LEVELS) {
     const g = playSolution(lv, [], lv.time * TPS);
-    assert.equal(g.won, lv.solution.length === 0, `niveau ${lv.id} : ${g.saved} sauvés sans aide`);
+    assert.equal(g.won, false, `niveau ${lv.id} : ${g.saved} sauvés sans aide`);
+    assert.ok(Object.values(lv.skills).some((n) => n > 0) && lv.solution.length > 0, `niveau ${lv.id} : au moins une compétence à utiliser`);
   }
 });
 
-test('une compétence inutile ne suffit pas : le niveau 2 ne se gagne pas avec un parachute', () => {
-  const lv = LEVELS[1];
+test('une compétence inutile ne suffit pas : le niveau 1 (le mur) ne se gagne pas avec un parachute', () => {
+  const lv = LEVELS[0];
   const g = playSolution({ ...lv, skills: { ...lv.skills, floater: 10 } }, [0, 1, 2].map((id) => ({ id, skill: 'floater', age: 2 })), lv.time * TPS);
   assert.equal(g.won, false);
 });

@@ -12,7 +12,7 @@ classic, in the browser, with no account, installable and playable offline.
   (horizontal tunnel), miner (diagonal tunnel), digger (down). Steel stops the diggers; falling more than 60 px kills without a parachute.
 - **Destructible terrain** on a pixel grid, water, steel, a time limit, a release rate you can raise, fast-forward, pause and a "blow
   everyone up" button.
-- **Eight levels** that each teach a skill; progress and best scores are kept in the browser, levels unlock one after the other.
+- **Eight levels** that each teach a skill (the first one is the wall, with the Basher already selected); only the skills a level offers are shown, with a hint under the scene; progress and best scores are kept in the browser, levels unlock one after the other.
 - **Mouse, touch and keyboard** (1–8 skills, P/Space pause, F fast, N nuke, +/− release rate, R restart, Esc leave). The scene is pixel
   art scaled without blur and fits any screen, portrait or landscape.
 - French and English, synthesized sounds, **installable and playable offline** (PWA: manifest, icons, network-first service worker).

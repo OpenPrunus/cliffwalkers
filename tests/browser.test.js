@@ -102,7 +102,7 @@ const click = (sel) => ev(`document.querySelector(${JSON.stringify(sel)}).click(
 const visible = (sel) => ev(`!document.querySelector(${JSON.stringify(sel)}).hidden`);
 const text = (sel) => ev(`document.querySelector(${JSON.stringify(sel)}).textContent`);
 const game = () => ev('(() => { const g = window.__cliff.app.game; return { tick: g.tick, released: g.released, saved: g.saved, dead: g.dead, over: g.over, won: g.won, skills: g.skills }; })()');
-const ALL_UNLOCKED = { best: { 1: 10, 2: 10, 3: 10, 4: 10, 5: 10, 6: 10, 7: 10 } };
+const ALL_UNLOCKED = { v: 2, best: { 1: 10, 2: 10, 3: 10, 4: 10, 5: 10, 6: 10, 7: 10 } };
 
 /** Clic (souris ou doigt) sur le marcheur numéro id : on convertit sa position dans le niveau en position à l'écran. */
 async function pointAt(id, touch) {
@@ -142,40 +142,41 @@ describe('pages et menus', () => {
 });
 
 describe('jouer', () => {
-  test('niveau 1 : le briefing, puis tous les marcheurs arrivent ; le niveau 2 se débloque et la progression est gardée', async () => {
+  test('niveau 1 (le mur) à la souris : briefing, seule la compétence utile est proposée, ordre donné en pause, victoire, niveau 2 débloqué', async () => {
     errors.length = 0;
     await open(DESKTOP);
     await click('#btn-continue');
     assert.equal(await visible('#briefing'), true);
     assert.match(await text('#brief-goal'), /8.*10/);
+    assert.match(await text('#brief-hint'), /Foreur/);
     await click('[data-action=begin]');
-    await click('#btn-fast');
-    await waitFor(() => visible('#result'), 30000, 'fin du niveau 1');
+    assert.equal(await ev('document.querySelectorAll(".skill").length'), 1, 'seul le foreur est proposé');
+    assert.equal(await ev('document.querySelector(".skill").disabled'), false);
+    assert.equal(await ev('document.querySelector(".skill").classList.contains("sel")'), true, 'et il est déjà choisi');
+    assert.match(await text('#hint'), /Foreur/);
+    await pauseAt(145);                                                       // pause devant le mur : on donne l'ordre sans se presser
+    const p = await pointAt(0, false);
+    assert.equal(p.st, 'walk');
+    await unpause();
+    await waitFor(() => ev('window.__cliff.app.game.lems[0].state === "bash"'), 2000, 'le foreur travaille');
+    assert.equal((await game()).skills.basher, 2);
+    await shot('level1');
+    await ev('window.__cliff.app.fast = true');                            // la suite se joue plus vite : le tunnel est ouvert
+    await waitFor(() => visible('#result'), 40000, 'fin du niveau 1');
     assert.match(await text('#res-title'), /Bravo/);
-    assert.equal((await game()).saved, 10);
-    await shot('won');
     assert.equal(await ev('JSON.parse(localStorage.getItem("cliffwalkers.progress")).best[1]'), 10);
-    await click('#res-main');                                           // niveau suivant
+    await shot('won');
+    await click('#res-main');
     assert.match(await text('#lvl-name'), /Niveau 2/);
     assert.deepEqual(errors, []);
   });
 
-  test('niveau 2 à la souris : choisir le foreur, cliquer sur le premier marcheur devant le mur, et gagner', async () => {
+  test('chaque niveau ne propose que ses compétences, dans l\'ordre habituel', async () => {
     await open(DESKTOP, 'fr', ALL_UNLOCKED);
     await click('[data-action=levels]');
-    await ev('document.querySelectorAll(".level-card")[1].click()');
+    await ev('document.querySelectorAll(".level-card")[7].click()');       // « Double jeu » : bâtisseur et foreur
     await click('[data-action=begin]');
-    await pauseAt(145);                                                       // pause devant le mur : on donne l'ordre sans se presser
-    assert.equal(await ev('document.querySelector(".skill.sel").dataset.skill'), 'basher');
-    const p = await pointAt(0, false);
-    await unpause();
-    assert.equal(p.st, 'walk');
-    await waitFor(() => ev('window.__cliff.app.game.lems[0].state === "bash"'), 2000, 'le foreur travaille');
-    assert.equal((await game()).skills.basher, 2);
-    await ev('window.__cliff.app.fast = true');                            // la suite se joue plus vite : le tunnel est ouvert
-    await waitFor(() => visible('#result'), 40000, 'fin du niveau 2');
-    assert.match(await text('#res-title'), /Bravo/);
-    await shot('level2');
+    assert.deepEqual(await ev('[...document.querySelectorAll(".skill")].map((b) => b.dataset.skill)'), ['builder', 'basher']);
   });
 
   test('un niveau raté propose de réessayer ; Échap et le clavier : pause, compétences, cadence', async () => {
@@ -232,7 +233,7 @@ describe('téléphone : tout tient à l\'écran et se joue au doigt', () => {
   test('au doigt : un toucher sur le marcheur lui donne la compétence choisie', async () => {
     await open(PHONE_PORTRAIT, 'fr', ALL_UNLOCKED);
     await click('[data-action=levels]');
-    await ev('document.querySelectorAll(".level-card")[1].click()');
+    await ev('document.querySelectorAll(".level-card")[0].click()');
     await click('[data-action=begin]');
     await pauseAt(145);
     await pointAt(0, true);
