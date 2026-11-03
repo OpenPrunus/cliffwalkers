@@ -191,7 +191,7 @@ $('#canvas').addEventListener('pointerleave', () => { app.hover = null; });
 $('#canvas').addEventListener('pointerdown', (e) => {
   audio.unlock();
   const g = app.game;
-  if (!g || app.paused || g.over || !app.selected) return;
+  if (!g || !$('#briefing').hidden || g.over || !app.selected) return;       // on peut donner un ordre pendant la pause
   const p = levelPoint(e);
   const target = g.pick(p.x, p.y, e.pointerType === 'touch' ? 13 : 8);
   if (!target) return;

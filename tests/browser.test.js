@@ -118,6 +118,10 @@ async function pointAt(id, touch) {
   return p;
 }
 
+/** Met la partie en pause à l'instant précis où le marcheur 0 atteint l'abscisse x (sondage toutes les 4 ms dans la page). */
+const pauseAt = (x) => ev(`new Promise((resolve) => { const a = window.__cliff.app; const i = setInterval(() => { const l = a.game.lems[0]; if (l && l.x >= ${x}) { a.paused = true; document.querySelector('#btn-pause').classList.add('on'); clearInterval(i); resolve(true); } }, 4); })`);
+const unpause = () => ev("document.dispatchEvent(new KeyboardEvent('keydown', { key: 'p' }))");
+
 describe('pages et menus', () => {
   test('le menu s\'affiche, sans erreur, en français puis en anglais ; le niveau 2 est verrouillé', async () => {
     errors.length = 0;
@@ -161,13 +165,14 @@ describe('jouer', () => {
     await click('[data-action=levels]');
     await ev('document.querySelectorAll(".level-card")[1].click()');
     await click('[data-action=begin]');
-    await ev('window.__cliff.app.fast = true');
-    await waitFor(() => ev('window.__cliff.app.game.lems[0]?.x >= 140'), 20000, 'le premier marcheur arrive au mur');
+    await pauseAt(145);                                                       // pause devant le mur : on donne l'ordre sans se presser
     assert.equal(await ev('document.querySelector(".skill.sel").dataset.skill'), 'basher');
     const p = await pointAt(0, false);
+    await unpause();
     assert.equal(p.st, 'walk');
     await waitFor(() => ev('window.__cliff.app.game.lems[0].state === "bash"'), 2000, 'le foreur travaille');
     assert.equal((await game()).skills.basher, 2);
+    await ev('window.__cliff.app.fast = true');                            // la suite se joue plus vite : le tunnel est ouvert
     await waitFor(() => visible('#result'), 40000, 'fin du niveau 2');
     assert.match(await text('#res-title'), /Bravo/);
     await shot('level2');
@@ -229,9 +234,9 @@ describe('téléphone : tout tient à l\'écran et se joue au doigt', () => {
     await click('[data-action=levels]');
     await ev('document.querySelectorAll(".level-card")[1].click()');
     await click('[data-action=begin]');
-    await ev('window.__cliff.app.fast = true');
-    await waitFor(() => ev('window.__cliff.app.game.lems[0]?.x >= 140'), 20000, 'le premier marcheur arrive au mur');
+    await pauseAt(145);
     await pointAt(0, true);
+    await unpause();
     await waitFor(() => ev('window.__cliff.app.game.lems[0].state === "bash"'), 2000, 'le foreur travaille');
   });
 });
