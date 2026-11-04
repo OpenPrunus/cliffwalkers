@@ -172,3 +172,9 @@ h2 { margin: 0; }
   .skill .nm { display: none; }
   #hint { display: none; }
 }
+
+/* écrans tactiles : cibles d'au moins 40 px */
+@media (pointer: coarse) {
+  .link { padding: 12px 10px; min-height: 44px; font-size: .95rem; }
+  .btn.small { min-height: 42px; }
+}
