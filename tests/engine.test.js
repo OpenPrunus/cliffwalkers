@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Game, Terrain, buildTerrain, DIRT, STEEL, AIR, WATER, TPS } from '../web/js/engine.js';
+import { Game, Terrain, buildTerrain, DIRT, STEEL, AIR, WATER, BRICK, TPS } from '../web/js/engine.js';
 
 /** Un petit niveau de test : sol plat en y = 100, entrée à gauche, porte à droite. */
 const level = (over = {}) => ({
@@ -22,7 +22,7 @@ test('le terrain : bords en acier, dessous vide, creuser, construire, acier inde
   assert.equal(t.get(10, 20), STEEL, 'l\'acier reste');
   assert.equal(t.get(8, 20), AIR);
   t.brick(0, 10, 5);
-  assert.equal(t.get(2, 10), DIRT);
+  assert.equal(t.get(2, 10), BRICK);
   const w = new Terrain(10, 10);
   w.ramp(0, 0, 10, 5, DIRT, 1);
   assert.equal(w.get(9, 4), DIRT);
@@ -102,16 +102,22 @@ test('mineur : descend en diagonale', () => {
   assert.ok(first(g).y > y0 + 5 && first(g).x > 60);
 });
 
-test('bâtisseur : 12 marches en escalier, puis il reprend sa marche', () => {
-  const g = new Game(level({ skills: { builder: 1 }, terrain: [{ r: [0, 100, 140, 76] }] }));
-  run(g, 100);
-  const x0 = first(g).x;
-  const y0 = first(g).y;
-  assert.equal(g.assign(0, 'builder'), true);
-  run(g, 12 * 6);
-  assert.equal(first(g).y, y0 - 12);
-  assert.equal(first(g).x, x0 + 24);
-  assert.equal(first(g).state, 'walk');
+test('bâtisseur : monte en escalier et s\'arrête dès qu\'il rejoint un terrain, puis continue sa route', () => {
+  const gap = level({ skills: { builder: 1 }, entrance: { x: 20, y: 90, dir: 1 }, exit: { x: 300, y: 52, w: 12, h: 24 }, terrain: [{ r: [0, 100, 140, 76] }, { r: [186, 76, 134, 100] }] });
+  const g = new Game(gap);
+  assert.ok(g.place('builder', 136, 99));
+  run(g, 900);
+  assert.equal(g.saved, 1, 'un seul bâtisseur suffit à franchir un gouffre de 46 pixels montant de 24');
+  const stairs = Array.from(g.terrain.m).filter((v) => v === BRICK).length;
+  assert.ok(stairs >= 22 * 5 && stairs <= 27 * 5, `marches posées : ${stairs}`);
+});
+
+test('bâtisseur : s\'il bute sur un mur au tout début, il fait demi-tour', () => {
+  const g = new Game(level({ skills: { builder: 1 }, terrain: [{ r: [0, 100, 320, 76] }, { r: [60, 80, 10, 20] }] }));
+  run(g, 20);
+  g.assign(0, 'builder');
+  run(g, 200);
+  assert.notEqual(first(g).state, 'build');
 });
 
 test('grimpeur : escalade un mur de 40 pixels', () => {
@@ -193,4 +199,48 @@ test('la simulation est déterministe : deux parties identiques donnent exacteme
   };
   assert.equal(play(), play());
   assert.ok(buildTerrain(level()).get(0, 100) === DIRT);
+});
+
+test('repères : le premier marcheur qui passe reçoit la compétence, pas les suivants ; le stock est réservé', () => {
+  const g = new Game(level({ count: 3, skills: { basher: 1 }, terrain: [{ r: [0, 100, 320, 76] }, { r: [150, 40, 20, 60] }] }));
+  const m = g.place('basher', 145, 99);
+  assert.deepEqual([m.x, m.y, m.uses], [145, 99, 1]);
+  assert.equal(g.skills.basher, 0, 'réservé dès la pose');
+  assert.equal(g.place('basher', 100, 99), null, 'plus de stock');
+  run(g, 400);
+  assert.equal(g.markers.length, 0, 'le repère est consommé');
+  assert.ok(g.saved >= 1);
+  assert.equal(g.lems.filter((l) => l.state === 'bash').length, 0);
+});
+
+test('repères : collés au sol, impossibles dans le vide, retirables avec remboursement, jamais pour le bloqueur ni le kamikaze', () => {
+  const g = new Game(level({ skills: { digger: 2, blocker: 1, bomber: 1 } }));
+  const m = g.place('digger', 120, 90);
+  assert.equal(m.y, 99, 'le repère se colle à la surface du sol');
+  assert.notEqual(g.place('digger', 140, 80), null, 'un toucher un peu au-dessus du sol se colle quand même à lui');
+  assert.equal(g.skills.digger, 0);
+  assert.equal(g.place('digger', 160, 90), null, 'plus de stock');
+  assert.equal(g.removeMarker(121, 95), true);
+  assert.equal(g.skills.digger, 1, 'le stock est rendu');
+  assert.equal(g.removeMarker(300, 20), false);
+  const none = new Game(level({ skills: { digger: 1 }, terrain: [{ r: [0, 150, 320, 26] }] }));
+  assert.equal(none.place('digger', 100, 20), null, 'rien en dessous à moins de 30 pixels');
+  assert.equal(g.place('blocker', 100, 99), null);
+  assert.equal(g.place('bomber', 100, 99), null);
+});
+
+test('repères : un repère de parachutiste vaut pour tous les marcheurs qui passent, tant qu\'il y en a', () => {
+  const g = new Game(level({ count: 4, entrance: { x: 20, y: 5, dir: 1 }, skills: { floater: 3 } }));
+  const m = g.place('floater', 20, 60);
+  assert.equal(m.uses, 3);
+  run(g, 400);
+  assert.equal(g.lems.filter((l) => l.floater).length, 3, 'trois parachutes seulement : le quatrième tombe sans');
+  assert.equal(g.skills.floater, 0);
+  assert.equal(g.dead, 1);
+});
+
+test('repères : le bloqueur se donne toujours à un marcheur, pas à un repère', () => {
+  const g = new Game(level({ skills: { blocker: 1 } }));
+  run(g, 40);
+  assert.equal(g.assign(0, 'blocker'), true);
 });

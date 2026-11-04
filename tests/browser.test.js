@@ -104,6 +104,19 @@ const text = (sel) => ev(`document.querySelector(${JSON.stringify(sel)}).textCon
 const game = () => ev('(() => { const g = window.__cliff.app.game; return { tick: g.tick, released: g.released, saved: g.saved, dead: g.dead, over: g.over, won: g.won, skills: g.skills }; })()');
 const ALL_UNLOCKED = { v: 2, best: { 1: 10, 2: 10, 3: 10, 4: 10, 5: 10, 6: 10, 7: 10 } };
 
+/** Un clic (souris ou doigt) sur le décor, aux coordonnées du niveau : plante un repère. */
+async function tapLevel(x, y, touch) {
+  const p = await ev(`(() => { const a = window.__cliff.app; const r = document.querySelector('#canvas').getBoundingClientRect(); return { x: r.left + (${x} / a.game.terrain.w) * r.width, y: r.top + (${y} / a.game.terrain.h) * r.height }; })()`);
+  if (touch) {
+    await call('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: p.x, y: p.y }] });
+    await call('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  } else {
+    await call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: p.x, y: p.y });
+    await call('Input.dispatchMouseEvent', { type: 'mousePressed', x: p.x, y: p.y, button: 'left', clickCount: 1 });
+    await call('Input.dispatchMouseEvent', { type: 'mouseReleased', x: p.x, y: p.y, button: 'left', clickCount: 1 });
+  }
+}
+
 /** Clic (souris ou doigt) sur le marcheur numéro id : on convertit sa position dans le niveau en position à l'écran. */
 async function pointAt(id, touch) {
   const p = await ev(`(() => { const a = window.__cliff.app; const l = a.game.lems[${id}]; const r = document.querySelector('#canvas').getBoundingClientRect(); return { x: r.left + (l.x / a.game.terrain.w) * r.width, y: r.top + ((l.y - 4) / a.game.terrain.h) * r.height, st: l.state, lx: l.x }; })()`);
@@ -142,7 +155,7 @@ describe('pages et menus', () => {
 });
 
 describe('jouer', () => {
-  test('niveau 1 (le mur) à la souris : briefing, seule la compétence utile est proposée, ordre donné en pause, victoire, niveau 2 débloqué', async () => {
+  test('niveau 1 (le mur) à la souris : briefing, seule la compétence utile est proposée, un repère planté devant le mur, victoire, niveau 2 débloqué', async () => {
     errors.length = 0;
     await open(DESKTOP);
     await click('#btn-continue');
@@ -154,12 +167,11 @@ describe('jouer', () => {
     assert.equal(await ev('document.querySelector(".skill").disabled'), false);
     assert.equal(await ev('document.querySelector(".skill").classList.contains("sel")'), true, 'et il est déjà choisi');
     assert.match(await text('#hint'), /Foreur/);
-    await pauseAt(145);                                                       // pause devant le mur : on donne l'ordre sans se presser
-    const p = await pointAt(0, false);
-    assert.equal(p.st, 'walk');
-    await unpause();
-    await waitFor(() => ev('window.__cliff.app.game.lems[0].state === "bash"'), 2000, 'le foreur travaille');
-    assert.equal((await game()).skills.basher, 2);
+    await tapLevel(144, 99, false);                                           // un repère planté dans le sol devant le mur
+    assert.equal(await ev('window.__cliff.app.game.markers.length'), 1);
+    assert.equal((await game()).skills.basher, 2, 'le stock est réservé à la pose');
+    await waitFor(() => ev('window.__cliff.app.game.lems.some((l) => l.state === "bash")'), 20000, 'le premier marcheur qui passe perce le mur');
+    assert.equal(await ev('window.__cliff.app.game.markers.length'), 0, 'le repère est consommé');
     await shot('level1');
     await ev('window.__cliff.app.fast = true');                            // la suite se joue plus vite : le tunnel est ouvert
     await waitFor(() => visible('#result'), 40000, 'fin du niveau 1');
@@ -169,6 +181,27 @@ describe('jouer', () => {
     await click('#res-main');
     assert.match(await text('#lvl-name'), /Niveau 2/);
     assert.deepEqual(errors, []);
+  });
+
+  test('toucher un repère le retire et rend le stock ; le bloqueur, lui, se donne en touchant le marcheur', async () => {
+    await open(DESKTOP, 'fr', ALL_UNLOCKED);
+    await click('[data-action=levels]');
+    await ev('document.querySelectorAll(".level-card")[0].click()');
+    await click('[data-action=begin]');
+    await tapLevel(144, 99, false);
+    assert.equal((await game()).skills.basher, 2);
+    await tapLevel(144, 99, false);                                           // un second toucher au même endroit retire le repère
+    assert.equal(await ev('window.__cliff.app.game.markers.length'), 0);
+    assert.equal((await game()).skills.basher, 3, 'stock rendu');
+    await click('[data-action=levels]');
+    await ev('document.querySelectorAll(".level-card")[5].click()');       // « Barrage » : bloqueur
+    await click('[data-action=begin]');
+    assert.equal(await ev('document.querySelector(".skill").dataset.skill'), 'blocker');
+    await waitFor(() => ev('window.__cliff.app.game.lems[0]?.x >= 150'), 20000, 'le premier marcheur approche du bord');
+    await pauseAt(186);
+    await pointAt(0, false);
+    await unpause();
+    await waitFor(() => ev('window.__cliff.app.game.lems[0].state === "block"'), 2000, 'le bloqueur bloque');
   });
 
   test('chaque niveau ne propose que ses compétences, dans l\'ordre habituel', async () => {
@@ -230,15 +263,13 @@ describe('téléphone : tout tient à l\'écran et se joue au doigt', () => {
     });
   }
 
-  test('au doigt : un toucher sur le marcheur lui donne la compétence choisie', async () => {
+  test('au doigt : un toucher sur le décor plante un repère que le premier marcheur exécute', async () => {
     await open(PHONE_PORTRAIT, 'fr', ALL_UNLOCKED);
     await click('[data-action=levels]');
     await ev('document.querySelectorAll(".level-card")[0].click()');
     await click('[data-action=begin]');
-    await pauseAt(145);
-    await pointAt(0, true);
-    await unpause();
-    await waitFor(() => ev('window.__cliff.app.game.lems[0].state === "bash"'), 2000, 'le foreur travaille');
+    await tapLevel(144, 99, true);
+    await waitFor(() => ev('window.__cliff.app.game.lems.some((l) => l.state === "bash")'), 20000, 'le premier marcheur qui passe perce le mur');
   });
 });
 

@@ -1,5 +1,5 @@
 // Cliffwalkers — dessin : terrain (une image mise à jour quand il change), porte, trappe et petits marcheurs en pixels.
-import { DIRT, STEEL, WATER, AIR } from './engine.js';
+import { DIRT, STEEL, WATER, AIR, BRICK } from './engine.js';
 
 const SKY_TOP = '#5db7f2';
 const SKY_BOTTOM = '#d3eefc';
@@ -30,7 +30,7 @@ export class Renderer {
         const v = t.m[y * t.w + x];
         const i = (y * t.w + x) * 4;
         let r = 0; let g = 0; let b = 0; let a = 255;
-        if (v === DIRT) {
+        if (v === BRICK) { r = (x + y) % 2 ? 200 : 178; g = (x + y) % 2 ? 124 : 104; b = 66; } else if (v === DIRT) {
           if (y === 0 || t.m[(y - 1) * t.w + x] === AIR) { r = 76; g = 175; b = 80; } else if ((x * 7 + y * 13) % 11 === 0) { r = 110; g = 70; b = 36; } else { r = 141; g = 90; b = 43; }
         } else if (v === STEEL) {
           if (x % 8 === 3 && y % 8 === 3) { r = 220; g = 228; b = 232; } else { r = 140; g = 152; b = 164; }
@@ -42,7 +42,7 @@ export class Renderer {
     this.rev = t.rev;
   }
 
-  draw(hover, tick) {
+  draw(hover, tick, ghost = null, ico = null) {
     const { ctx, game } = this;
     const t = game.terrain;
     if (this.rev !== t.rev) this.paintTerrain();
@@ -50,6 +50,8 @@ export class Renderer {
     ctx.fillRect(0, 0, t.w, t.h);
     ctx.drawImage(this.layer, 0, 0);
     this.drawHatch(tick);
+    for (const m of game.markers) this.drawMarker(m, tick, ico);
+    if (ghost) this.drawMarker({ ...ghost, uses: 1 }, tick, ico, true);
     this.drawExit(tick);
     for (const l of game.lems) if (l.state !== 'dead' && l.state !== 'saved') this.drawLemming(l, tick);
     if (hover) {
@@ -57,6 +59,33 @@ export class Renderer {
       ctx.lineWidth = 1;
       ctx.strokeRect(hover.x - 6.5, hover.y - 12.5, 13, 16);
     }
+  }
+
+  /** Un repère : un petit drapeau planté dans le sol, l'icône de la compétence au-dessus, une zone en pointillés. */
+  drawMarker(m, tick, ico, ghost = false) {
+    const { ctx } = this;
+    const bob = (tick >> 3) % 2;
+    ctx.globalAlpha = ghost ? 0.55 : 1;
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(m.x, m.y - 12, 1, 12);
+    ctx.fillStyle = '#ffcc33';
+    ctx.fillRect(m.x + 1, m.y - 12 + bob, 5, 3);
+    if (m.uses > 1 && !ghost) {
+      ctx.fillStyle = '#fff';
+      ctx.font = '7px monospace';
+      ctx.textAlign = 'left';
+      ctx.fillText(`×${m.uses}`, m.x + 7, m.y - 8);
+    }
+    ctx.strokeStyle = 'rgba(255,255,255,.55)';
+    ctx.setLineDash([2, 2]);
+    ctx.strokeRect(m.x - 2.5, m.y - 9.5, 6, 11);
+    ctx.setLineDash([]);
+    if (ico) {
+      ctx.font = '9px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(ico[m.skill] ?? '', m.x, m.y - 15 - bob);
+    }
+    ctx.globalAlpha = 1;
   }
 
   drawHatch(tick) {

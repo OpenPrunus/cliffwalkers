@@ -6,13 +6,19 @@ export const AIR = 0;
 export const DIRT = 1;
 export const STEEL = 2;
 export const WATER = 3;
+export const BRICK = 4;            // marche construite : solide comme la terre, mais on la distingue du décor naturel
 
 export const SKILLS = ['climber', 'floater', 'bomber', 'blocker', 'builder', 'basher', 'miner', 'digger'];
 const BODY = 8;            // hauteur d'un marcheur (pixels)
 const STEP_UP = 6;         // marche franchissable sans aide
 const DEADLY_FALL = 60;    // chute mortelle sans parachute (pixels)
 const FUSE = 150;          // 5 secondes avant l'explosion
-const BRICKS = 12;
+const BRICKS = 30;         // un bâtisseur monte jusqu'à 30 marches, et s'arrête dès qu'il rejoint un terrain
+
+/** Compétences posées sur le décor (le premier marcheur qui passe les reçoit) ; le bloqueur et le kamikaze, eux, se donnent à un marcheur précis. */
+export const PLACED = new Set(['climber', 'floater', 'builder', 'basher', 'miner', 'digger']);
+const GROUND = new Set(['builder', 'basher', 'miner', 'digger']);       // posées sur le sol, déclenchées par un marcheur qui avance
+const PERSISTENT = new Set(['climber', 'floater']);                       // valables pour tous les marcheurs qui passent, tant qu'il en reste
 const GROUNDED = new Set(['walk', 'dig', 'bash', 'mine', 'build', 'block']);
 
 /** Le terrain : un tableau de pixels (air, terre, acier indestructible, eau mortelle). */
@@ -32,7 +38,7 @@ export class Terrain {
 
   solid(x, y) {
     const v = this.get(x, y);
-    return v === DIRT || v === STEEL;
+    return v === DIRT || v === STEEL || v === BRICK;
   }
 
   set(x, y, v) {
@@ -63,19 +69,19 @@ export class Terrain {
     for (let j = y; j < y + h; j++) {
       for (let i = x; i < x + w; i++) {
         const v = this.get(i, j);
-        if (v === DIRT) { this.set(i, j, AIR); removed++; this.rev++; } else if (v === STEEL && i >= 0 && i < this.w) steel = true;
+        if (v === DIRT || v === BRICK) { this.set(i, j, AIR); removed++; this.rev++; } else if (v === STEEL && i >= 0 && i < this.w) steel = true;
       }
     }
     return { removed, steel };
   }
 
   carveCircle(cx, cy, r) {
-    for (let j = -r; j <= r; j++) for (let i = -r; i <= r; i++) if (i * i + j * j <= r * r && this.get(cx + i, cy + j) === DIRT) { this.set(cx + i, cy + j, AIR); this.rev++; }
+    for (let j = -r; j <= r; j++) for (let i = -r; i <= r; i++) if (i * i + j * j <= r * r && (this.get(cx + i, cy + j) === DIRT || this.get(cx + i, cy + j) === BRICK)) { this.set(cx + i, cy + j, AIR); this.rev++; }
   }
 
   /** Construit un bloc de `w` pixels (uniquement dans le vide). */
   brick(x, y, w) {
-    for (let i = x; i < x + w; i++) if (this.get(i, y) === AIR) { this.set(i, y, DIRT); this.rev++; }
+    for (let i = x; i < x + w; i++) if (this.get(i, y) === AIR) { this.set(i, y, BRICK); this.rev++; }
   }
 
   /** Y a-t-il de l'acier dans ce rectangle ? */
@@ -112,6 +118,8 @@ export class Game {
     this.minRate = level.rate ?? 50;
     this.rate = this.minRate;
     this.skills = { ...Object.fromEntries(SKILLS.map((s) => [s, 0])), ...level.skills };
+    this.markers = [];               // repères posés sur le décor : { id, skill, x, y, uses }
+    this.markerSeq = 0;
     this.nuked = false;
     this.over = false;
     this.won = false;
@@ -147,6 +155,7 @@ export class Game {
       this.nextSpawn = this.tick + this.interval;
       this.emit('spawn', { x: e.x, y: e.y });
     }
+    this.triggerMarkers();
     for (const l of this.lems) if (l.state !== 'dead' && l.state !== 'saved') this.update(l);
     const living = this.alive.filter((l) => l.state !== 'block').length;          // un bloqueur ne retarde pas la fin du niveau
     const finished = (this.released === this.total || this.nuked) && living === 0;
@@ -265,7 +274,7 @@ export class Game {
     if (t.hasSteel(x0, l.y - BODY + 1, 3, BODY)) { l.state = 'walk'; l.dir = -l.dir; return; }
     const { removed } = t.carveRect(x0, l.y - BODY + 1, 3, BODY);
     l.idle = removed === 0 ? l.idle + 1 : 0;
-    if (l.idle >= 3) { l.state = 'walk'; return; }
+    if (l.idle >= 8) { l.state = 'walk'; return; }
     l.x += l.dir;
     if (!t.solid(l.x, l.y + 1)) {
       let d = 1;
@@ -281,7 +290,7 @@ export class Game {
     if (t.hasSteel(x0, l.y - BODY + 2, 4, BODY)) { l.state = 'walk'; l.dir = -l.dir; return; }
     const { removed } = t.carveRect(x0, l.y - BODY + 2, 4, BODY);
     l.idle = removed === 0 ? l.idle + 1 : 0;
-    if (l.idle >= 2) { l.state = 'walk'; return; }
+    if (l.idle >= 4) { l.state = 'walk'; return; }
     l.x += l.dir * 2;
     l.y += 1;
     if (!t.solid(l.x, l.y + 1)) { l.state = 'fall'; l.fall = 0; }
@@ -291,14 +300,29 @@ export class Game {
     const t = this.terrain;
     if (++l.timer % 6 !== 0) return;
     if (l.count >= BRICKS) { l.state = 'walk'; return; }
+    // un vrai terrain (pas une de ses marches) à portée devant, à peu près à hauteur de ses pieds : le pont est fini, il continue sa route
+    if (l.count > 0 && this.landing(l)) { l.state = 'walk'; return; }
     const x0 = l.dir === 1 ? l.x + 1 : l.x - 5;
     t.brick(x0, l.y, 5);
     const nx = l.x + l.dir * 2;
-    if (!this.clear(nx, l.y - 1)) { l.state = 'walk'; l.dir = -l.dir; return; }
+    if (!this.clear(nx, l.y - 1)) { l.state = 'walk'; if (l.count === 0) l.dir = -l.dir; return; }
     l.x = nx;
     l.y -= 1;
     l.count++;
-    if (l.count >= BRICKS) l.state = 'walk';
+  }
+
+  /** Y a-t-il, tout près devant, un terrain naturel où poser le pied (au niveau des pieds, ou un peu plus bas une fois quelques marches posées) ? */
+  landing(l) {
+    const t = this.terrain;
+    for (let dx = 1; dx <= 4; dx++) {
+      const x = l.x + l.dir * dx;
+      for (let d = 0; d <= 2; d++) {
+        if (d > 0 && l.count < 4) break;
+        const v = t.get(x, l.y + 1 + d);
+        if ((v === DIRT || v === STEEL) && this.clear(x, l.y + d)) return true;
+      }
+    }
+    return false;
   }
 
   /** La condition pour donner une compétence à ce lemming (sans la consommer). */
@@ -312,10 +336,8 @@ export class Game {
     }
   }
 
-  /** Donne une compétence au lemming numéro `id` ; retourne vrai si elle a été utilisée. */
-  assign(id, skill) {
-    const l = this.lems[id];
-    if (!this.canAssign(l, skill)) return false;
+  /** Applique une compétence à un marcheur (sans toucher aux stocks). */
+  apply(l, skill) {
     switch (skill) {
       case 'climber': l.climber = true; break;
       case 'floater': l.floater = true; break;
@@ -323,9 +345,76 @@ export class Game {
       case 'blocker': l.state = 'block'; break;
       default: l.state = { builder: 'build', basher: 'bash', miner: 'mine', digger: 'dig' }[skill]; l.timer = 0; l.count = 0; l.idle = 0; break;
     }
-    this.skills[skill]--;
     this.emit('skill', l);
+  }
+
+  /** Donne une compétence au lemming numéro `id` ; retourne vrai si elle a été utilisée. */
+  assign(id, skill) {
+    const l = this.lems[id];
+    if (!this.canAssign(l, skill)) return false;
+    this.apply(l, skill);
+    this.skills[skill]--;
     return true;
+  }
+
+  /**
+   * Pose un repère : le premier marcheur qui passera à cet endroit recevra la compétence (grimpeur et parachutiste : tous ceux
+   * qui passeront, tant qu'il en reste). Le repère se colle au sol. Retourne le repère, ou null s'il n'y a pas de sol ou de stock.
+   */
+  place(skill, x, y) {
+    const spot = this.snap(skill, x, y);
+    if (!spot) return null;
+    const uses = PERSISTENT.has(skill) ? this.skills[skill] : 1;
+    this.skills[skill] -= uses;
+    const marker = { id: this.markerSeq++, skill, ...spot, uses };
+    this.markers.push(marker);
+    return marker;
+  }
+
+  /** Où un repère serait posé si on touchait ici : collé au sol pour les compétences de terrain ; null si impossible. */
+  snap(skill, x, y) {
+    if (!PLACED.has(skill) || (this.skills[skill] ?? 0) <= 0) return null;
+    const t = this.terrain;
+    x = Math.round(x);
+    let my = Math.round(y);
+    if (GROUND.has(skill)) {
+      let found = null;
+      for (let j = my - 6; j <= my + 30 && found === null; j++) if (t.solid(x, j) && !t.solid(x, j - 1)) found = j - 1;
+      if (found === null) return null;
+      my = found;
+    }
+    return { x, y: my };
+  }
+
+  /** Retire le repère sous le pointeur (le stock est rendu) ; retourne vrai s'il y en avait un. */
+  removeMarker(px, py, r = 8) {
+    let best = null;
+    let bestD = Infinity;
+    for (const m of this.markers) {
+      const d = (m.x - px) ** 2 + (m.y - 4 - py) ** 2;
+      if (Math.abs(m.x - px) <= r && Math.abs(m.y - 4 - py) <= r + 4 && d < bestD) { best = m; bestD = d; }
+    }
+    if (!best) return false;
+    this.skills[best.skill] += best.uses;
+    this.markers = this.markers.filter((m) => m !== best);
+    return true;
+  }
+
+  /** Chaque repère donne sa compétence au premier marcheur qui passe dessus. */
+  triggerMarkers() {
+    for (const m of this.markers) {
+      for (const l of this.lems) {
+        if (m.uses <= 0) break;
+        if (l.state === 'dead' || l.state === 'saved') continue;
+        let hit;
+        if (PERSISTENT.has(m.skill)) hit = Math.abs(l.x - m.x) <= 4 && Math.abs(l.y - m.y) <= 16 && (m.skill === 'climber' ? !l.climber : !l.floater);
+        else hit = l.state === 'walk' && Math.abs(l.x - m.x) <= 2 && Math.abs(l.y - m.y) <= 5;
+        if (!hit) continue;
+        this.apply(l, m.skill);
+        m.uses--;
+      }
+    }
+    this.markers = this.markers.filter((m) => m.uses > 0);
   }
 
   /** Tout le monde explose, l'un après l'autre. */
@@ -352,11 +441,13 @@ export class Game {
 
 /**
  * Joue la solution d'un niveau : une liste d'ordres { id, skill, age } (n pas après la naissance du lemming `id`)
- * ou { id, skill, x } (dès qu'il atteint cette abscisse en marchant). Retourne la partie terminée.
+ * ou { id, skill, x } (dès qu'il atteint cette abscisse en marchant), ou un repère { skill, place: [x, y] } posé avant le départ.
+ * Retourne la partie terminée.
  */
 export function playSolution(level, solution = level.solution ?? [], maxTicks = 60 * TPS) {
   const g = new Game(level);
   const todo = solution.map((o) => ({ ...o }));
+  for (const o of todo) if (o.place) { g.place(o.skill, o.place[0], o.place[1]); o.done = true; }      // les repères sont posés avant le départ
   while (!g.over && g.tick < maxTicks) {
     for (const o of todo) {
       if (o.done) continue;

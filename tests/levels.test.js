@@ -28,7 +28,7 @@ test('chaque niveau se gagne avec sa solution, bien avant la fin du temps', () =
 test('la solution n\'utilise que les compétences du niveau, et pas plus que le stock', () => {
   for (const lv of LEVELS) {
     const used = {};
-    for (const o of lv.solution) used[o.skill] = (used[o.skill] ?? 0) + 1;
+    for (const o of lv.solution) used[o.skill] = (used[o.skill] ?? 0) + (o.place ? 1 : 1);
     for (const [k, n] of Object.entries(used)) assert.ok((lv.skills[k] ?? 0) >= n, `niveau ${lv.id} : ${k} ${n} > ${lv.skills[k] ?? 0}`);
   }
 });

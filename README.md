@@ -8,8 +8,11 @@ classic, in the browser, with no account, installable and playable offline.
 
 ## Features
 
-- **Eight skills**: climber, floater (parachute), bomber (5 s fuse, leaves a crater), blocker, builder (12-step staircase), basher
-  (horizontal tunnel), miner (diagonal tunnel), digger (down). Steel stops the diggers; falling more than 60 px kills without a parachute.
+- **Eight skills**: climber, floater (parachute), bomber (5 s fuse, leaves a crater), blocker, builder (a staircase that climbs until it
+  reaches ground, up to 30 steps), basher (horizontal tunnel), miner (diagonal tunnel), digger (down).
+- **Markers**: climber, floater, builder, basher, miner and digger are *planted on the scenery* — tap where you want the work done and the
+  first walker to pass over the marker carries it out (a floater or climber marker serves every walker that passes, while stock lasts;
+  tap a marker to remove it). Only the blocker and the bomber are given to a particular walker by tapping it. Steel stops the diggers; falling more than 60 px kills without a parachute.
 - **Destructible terrain** on a pixel grid, water, steel, a time limit, a release rate you can raise, fast-forward, pause and a "blow
   everyone up" button.
 - **Eight levels** that each teach a skill (the first one is the wall, with the Basher already selected); only the skills a level offers are shown, with a hint under the scene; progress and best scores are kept in the browser, levels unlock one after the other.

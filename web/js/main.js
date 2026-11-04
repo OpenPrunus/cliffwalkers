@@ -1,5 +1,5 @@
 // Cliffwalkers — interface : écrans, boucle de jeu à 30 pas par seconde, souris, doigt et clavier.
-import { Game, SKILLS, TPS } from './engine.js';
+import { Game, SKILLS, TPS, PLACED } from './engine.js';
 import { LEVELS } from './levels.js';
 import { Renderer } from './render.js';
 import * as audio from './audio.js';
@@ -21,7 +21,7 @@ const unlocked = (i) => i === 0 || cleared(i - 1);
 const firstOpen = () => { for (let i = 0; i < LEVELS.length; i++) if (!cleared(i)) return i; return LEVELS.length - 1; };
 
 // ---------------------------------------------------------------- état
-const app = { idx: 0, game: null, renderer: null, selected: null, paused: true, fast: false, hover: null, resultTimer: null, acc: 0, last: 0, coarse: false };
+const app = { ghost: null, idx: 0, game: null, renderer: null, selected: null, paused: true, fast: false, hover: null, resultTimer: null, acc: 0, last: 0, coarse: false };
 
 function show(name) {
   for (const id of SCREENS) $(`#${id}`).hidden = id !== name;
@@ -177,7 +177,7 @@ function frame(now) {
     updateBar();
     if (g.over && $('#result').hidden && !app.resultTimer) app.resultTimer = setTimeout(() => { app.resultTimer = null; showResult(); }, 700);
   }
-  app.renderer.draw(app.hover, g.tick);
+  app.renderer.draw(app.hover, g.tick, app.ghost, ICONS);
 }
 
 // ---------------------------------------------------------------- pointeur
@@ -190,15 +190,25 @@ $('#canvas').addEventListener('pointermove', (e) => {
   if (!app.game) return;
   app.coarse = e.pointerType === 'touch';
   const p = levelPoint(e);
-  app.hover = app.game.pick(p.x, p.y, app.coarse ? 12 : 7);
+  const placed = app.selected && PLACED.has(app.selected);
+  app.hover = placed ? null : app.game.pick(p.x, p.y, app.coarse ? 12 : 7);
+  app.ghost = placed && !app.coarse ? { skill: app.selected, ...(app.game.snap(app.selected, p.x, p.y) ?? { x: -99, y: -99 }) } : null;
 });
-$('#canvas').addEventListener('pointerleave', () => { app.hover = null; });
+$('#canvas').addEventListener('pointerleave', () => { app.hover = null; app.ghost = null; });
 $('#canvas').addEventListener('pointerdown', (e) => {
   audio.unlock();
   const g = app.game;
   if (!g || !$('#briefing').hidden || g.over || !app.selected) return;       // on peut donner un ordre pendant la pause
   const p = levelPoint(e);
-  const target = g.pick(p.x, p.y, e.pointerType === 'touch' ? 13 : 8);
+  const touch = e.pointerType === 'touch';
+  if (PLACED.has(app.selected)) {
+    // compétences de terrain : on touche le décor, un repère s'y plante ; toucher un repère existant le retire
+    if (g.removeMarker(p.x, p.y, touch ? 11 : 8)) { audio.play('click'); updateBar(); return; }
+    if (g.place(app.selected, p.x, p.y)) { audio.play('skill'); updateBar(); } else audio.play('refuse');
+    return;
+  }
+  // bloqueur et kamikaze : on touche le marcheur lui-même
+  const target = g.pick(p.x, p.y, touch ? 13 : 8);
   if (!target) return;
   if (g.assign(target.id, app.selected)) { audio.play('skill'); updateBar(); } else audio.play('refuse');
 });
